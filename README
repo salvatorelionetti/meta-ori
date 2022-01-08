@@ -15,3 +15,20 @@ it.
 8. Launch "petalinux-build -c petalinux-initramfs-image"
 
 Enjoy 
+
+II. Testing with QEmu
+======================
+
+1. Install nbd-server package and start the server:
+$ nbd-server 127.0.0.1:10809 -C nbd_server.conf
+
+and here the conf file:
+[generic]
+[rootfs.img]
+exportname=<change with abs path>/rootfs.img
+
+2. Execute the command line
+<plnx-inst-path>/components/yocto/buildtools/sysroots/x86_64-petalinux-linux/usr/bin/qemu-system-aarch64 -M arm-generic-fdt-7series -machine linux=on   -serial /dev/null -serial mon:stdio -display none -kernel images/linux/zImage -initrd images/linux/ramdisk.cpio.gz.u-boot -gdb tcp::9000 -dtb images/linux/system.dtb  -device loader,addr=0xf8000008,data=0xDF0D,data-len=4 -device loader,addr=0xf8000140,data=0x00500801,data-len=4 -device loader,addr=0xf800012c,data=0x1ed044d,data-len=4 -device loader,addr=0xf8000108,data=0x0001e008,data-len=4 -device loader,addr=0xF8000910,data=0xF,data-len=0x4 -net nic,netdev=eth0 -append "console=ttyPS0,115200 earlycon root=/dev/nbd0 nbdroot=10.0.2.2:10809/rootfs.img init_fatal_sh=1 verbose debug" -netdev user,id=eth0,guestfwd=tcp::10809-tcp:127.0.0.1:10809
+
+Known bugs
+1. Busybox mount fails with EINVAL

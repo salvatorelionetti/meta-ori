@@ -95,9 +95,12 @@ nbdrootfs_run() {
 
 	# Support defining an alternate launch script with env variable NBDCLIENT.
 	#NBDCLIENT=${NBDCLIENT:-/sbin/nbd-client}
-	# initramfs image install the program into /usr/sbin
+
+	# Differencies with Debian scripts
+	# initramfs image install the program into /usr/sbin (debian script assume /sbin)
+	# nbd version is also different, so parameters are arranged differently
 	NBDCLIENT=nbd-client
-	echo $NBDCLIENT $nbdsrv -N $nbdpath $nbdport $nbdrootdev -swap -persist -systemd-mark
+	echo $NBDCLIENT -name $nbdpath $nbdsrv $nbdport $nbdrootdev -swap -persist -systemd-mark
 	echo mount ${nbdrootdev} ${ROOTFS_DIR}
 
 	[ -n "${ROOTFS_DIR}" ] && {
@@ -106,7 +109,7 @@ nbdrootfs_run() {
 		# because initramfs even does not have module dir
 		# More generally should be linked to kernel config
 		# load_kernel_module nbd
-		$NBDCLIENT $nbdsrv -N $nbdpath $nbdport $nbdrootdev -swap -persist -systemd-mark
+		$NBDCLIENT -name $nbdpath $nbdsrv $nbdport $nbdrootdev -swap -persist -systemd-mark
 		mount ${nbdrootdev} ${ROOTFS_DIR}
 	}
 }
