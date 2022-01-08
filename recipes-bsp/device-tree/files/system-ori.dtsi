@@ -1,0 +1,7 @@
+/include/ "system-conf.dtsi"
+/ {
+        chosen {
+                bootargs = "console=ttyPS0,115200 earlycon root=/dev/nbd0 rw";
+                stdout-path = "serial0:115200n8";
+        };
+};

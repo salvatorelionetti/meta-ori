@@ -1,0 +1,153 @@
+#!/bin/sh
+# porting debian script to yocto initramfs-framework
+# a better idea is to have a compatible env 
+# or even better install arm package onto rootfs
+
+nbdrootfs_enabled() {
+	if [ -z ${bootparam_nbdroot} ]; then
+		return 1
+	fi
+
+	case ${bootparam_root} in /dev/nbd*)
+		return 0
+	esac
+
+	return 1
+}
+
+nbdrootfs_run2() {
+	local nbd_opts
+	local location
+	local flags
+	local server_ip
+
+	nbd_opts=""
+	if [ "${bootparam_nbdroot#*,}" != "${bootparam_nbdroot}" ]; then
+		nbd_opts="-o ${bootparam_nbdroot#*,}"
+	fi
+
+	location="${bootparam_nbdroot%%,*}"
+	if [ "${location#*:}" = "${location}" ]; then
+		# server-ip not given. Get server ip from ip option
+		server_ip=""
+		if [ "${bootparam_ip#*:}" != "${bootparam_ip}" ]; then
+			server_ip=$(echo "$bootparam_ip" | cut -d: -f2)
+		fi
+
+		if [ -z "$server_ip" ]; then
+			fatal "Server IP is not set. Update ip or nbdroot options."
+		fi
+		location=${server_ip}:${location}
+	fi
+
+	flags="-o nolock"
+	if [ -n "$bootparam_ro" ] && ! echo "$bootparam_rootflags" | grep -w -q "ro"; then
+		if [  -n "$bootparam_rootflags" ]; then
+			bootparam_rootflags="$bootparam_rootflags,"
+		fi
+		bootparam_rootflags="${bootparam_rootflags}ro"
+	fi
+	if [ -n "$bootparam_rootflags" ]; then
+		flags="$flags -o $bootparam_rootflags"
+	fi
+
+	mount -t nbd ${flags} ${nbd_opts} ${location} ${ROOTFS_DIR}
+}
+
+nbdrootfs_run() {
+	local nbdrootdev
+	local nbdbasedev
+	local nbdroot
+	local nbdsrv
+	local nbdpath
+	local nbdport
+	local nbdportpath
+
+	nbdrootdev="$bootparam_root"
+	nbdbasedev="${bootparam_root#/dev/}"
+	nbdroot="$bootparam_nbdroot"
+
+	case "$nbdroot" in
+		*,*,*)
+			nbdsrv="${nbdroot%%,*}"
+			nbdpath="${nbdroot%,*}"
+			nbdpath="${nbdpath##*,}"
+			# root= parameter overrides three-option nbdroot= parameter
+			if [ -z "$nbdrootdev" ]
+			then
+				nbdbasedev="${nbdroot##*,}"
+				nbdrootdev=/dev/$nbdbasedev
+			fi
+			;;
+		*,*)
+			nbdsrv="${nbdroot%,*}"
+			nbdport="${nbdroot#*,}"
+			;;
+		\[*\]:/*)
+			# [ipv6]:/path
+			# Note: this is specifically written to be compatible with NFS
+			# URLs
+			nbdsrv=${nbdroot%\]*}
+			nbdsrv=${nbdsrv#\[}
+			nbdpath=${nbdroot#\[$nbdsrv\]}
+			nbdpath=${nbdpath#:}
+			;;
+		\[*\]*)
+			# [ipv6]:port/path
+			nbdsrv=${nbdroot%\]*}
+			nbdsrv=${nbdsrv#\[}
+			nbdportpath=${nbdroot#\[$nbdsrv\]}
+			nbdportpath=${nbdportpath#:}
+			nbdport=${nbdportpath%%/*}
+			nbdpath=${nbdportpath#$nbdport/}
+			;;
+		/*|*:/*)
+			# ipv4:/path
+			# Note: this is specifically written to be compatible with NFS
+			# URLs
+			nbdsrv=${nbdroot%%[:/]*}
+			nbdpath=${nbdroot#$nbdsrv}
+			nbdpath=${nbdpath#:}
+			;;
+		*)
+			# ipv4:port/path
+			nbdsrv=${nbdroot%%[:/]*}
+			nbdportpath=${nbdroot#$nbdsrv}
+			nbdportpath=${nbdportpath#:}
+			nbdport=${nbdportpath%%/*}
+			nbdpath=${nbdportpath#$nbdport/}
+			;;
+	esac
+
+	nbdrootdev=${nbdrootdev%p*}
+	nbdbasedev=${nbdbasedev%p*}
+
+	if [ -z "$nbdsrv" ] || [ -z "$nbdrootdev" ] || [ -z "$nbdpath" ]
+	then
+		echo "Insufficient information to set up nbd, quitting (nbdroot=$nbdroot, host=$nbdsrv, name=$nbdpath, port=$nbdport, nbd-device=$nbdrootdev)"
+		return 1
+	fi
+
+	# Support defining an alternate launch script with env variable NBDCLIENT.
+	NBDCLIENT=${NBDCLIENT:-/sbin/nbd-client}
+	echo $NBDCLIENT $nbdsrv -N $nbdpath $nbdport $nbdrootdev -swap -persist -systemd-mark
+	echo mount ${nbdpath} ${ROOTFS_DIR}
+	[ -n "${ROOTFS_DIR}" ] && {
+		echo "ROOTFS_DIR not empty! ${ROOTFS_DIR}"
+		load_kernel_module nbd
+		$NBDCLIENT $nbdsrv -N $nbdpath $nbdport $nbdrootdev -swap -persist -systemd-mark
+		mount ${nbdpath} ${ROOTFS_DIR}
+	}
+}
+
+[ -z "${ROOTFS_DIR}" ] && {
+	echo "Built in test started (init script fragment)"
+	module="nbdrootfs"
+        if ! eval "${module}_enabled"; then
+                echo "Skipping module $module"
+		exit 1
+        fi
+
+        echo "Running ${module}_run"
+        eval "${module}_run"
+}
