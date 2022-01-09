@@ -32,4 +32,5 @@ exportname=<change with abs path>/rootfs.img
 
 III. Possible bugs
 ==================
-1. Verify if the connection is closed after the rootfs handover
+1. Rootfs handover: verify that the connection must be close (maybe all sockets are closed?)
+2. Rootfs handover: verify if uboot dtb is still loaded and properly used after the switch_root.  
